@@ -50,7 +50,7 @@ CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            VARCHAR(150) NOT NULL,
     email           VARCHAR(255) NOT NULL UNIQUE,
-    password_hash   VARCHAR(255) NOT NULL,
+    password_hash   VARCHAR(255) NOT NULL CHECK (length(password_hash) >= 6),
     role            user_role NOT NULL DEFAULT 'employee',
     department_id   UUID REFERENCES departments(id),
     status          active_status NOT NULL DEFAULT 'active',

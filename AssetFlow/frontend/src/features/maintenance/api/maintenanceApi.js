@@ -39,11 +39,38 @@ export const createMaintenanceRequest = async (payload) => {
   }
 };
 
-export const updateMaintenanceStatus = async (id, payload) => {
+export const approveMaintenance = async (id) => {
   try {
-    const res = await apiClient.patch(`/maintenance/${id}`, payload);
+    const res = await apiClient.patch(`/maintenance/${id}/approve`);
     return { data: res.data?.data || res.data };
   } catch (error) {
-    throw new Error(error?.response?.data?.error?.message || error?.message || 'Could not update maintenance status.');
+    throw new Error(error?.response?.data?.error?.message || error?.message || 'Could not approve maintenance.');
+  }
+};
+
+export const assignTechnician = async (id, technician_name) => {
+  try {
+    const res = await apiClient.patch(`/maintenance/${id}/assign-technician`, { technician_name });
+    return { data: res.data?.data || res.data };
+  } catch (error) {
+    throw new Error(error?.response?.data?.error?.message || error?.message || 'Could not assign technician.');
+  }
+};
+
+export const startMaintenance = async (id) => {
+  try {
+    const res = await apiClient.patch(`/maintenance/${id}/start`);
+    return { data: res.data?.data || res.data };
+  } catch (error) {
+    throw new Error(error?.response?.data?.error?.message || error?.message || 'Could not start maintenance.');
+  }
+};
+
+export const resolveMaintenance = async (id, resolution_notes = '') => {
+  try {
+    const res = await apiClient.patch(`/maintenance/${id}/resolve`, { resolution_notes });
+    return { data: res.data?.data || res.data };
+  } catch (error) {
+    throw new Error(error?.response?.data?.error?.message || error?.message || 'Could not resolve maintenance.');
   }
 };

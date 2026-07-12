@@ -44,7 +44,7 @@ async function approveRequest(id, user) {
   validateTransition(MAINTENANCE_TRANSITIONS, req.status, 'approved');
 
   // Check asset can transition to under_maintenance
-  if (['under_maintenance', 'retired', 'disposed'].includes(req.asset_status)) {
+  if (['retired', 'disposed'].includes(req.asset_status)) {
     const err = new ConflictError(`Asset is not available for maintenance (status: ${req.asset_status})`);
     err.code = 'ASSET_NOT_AVAILABLE_FOR_MAINTENANCE';
     throw err;
@@ -55,8 +55,10 @@ async function approveRequest(id, user) {
     await client.query('BEGIN');
 
     await maintRepo.updateStatus(id, 'approved', { approved_by: user.id }, client);
-    validateTransition(ASSET_TRANSITIONS, req.asset_status, 'under_maintenance');
-    await assetsRepo.updateStatus(req.asset_id, 'under_maintenance', client);
+    if (req.asset_status !== 'under_maintenance') {
+      validateTransition(ASSET_TRANSITIONS, req.asset_status, 'under_maintenance');
+      await assetsRepo.updateStatus(req.asset_id, 'under_maintenance', client);
+    }
 
     await client.query('COMMIT');
 

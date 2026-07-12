@@ -13,10 +13,10 @@ import {
 
 // ─── Role maps (DB value ↔ UI label) ─────────────────────────────────────────
 const ROLE_API_TO_UI = {
-  admin:           'Admin',
-  asset_manager:   'Asset Manager',
+  admin: 'Admin',
+  asset_manager: 'Asset Manager',
   department_head: 'Department Head',
-  employee:        'Employee',
+  employee: 'Employee',
 };
 const ROLE_UI_TO_API = Object.fromEntries(
   Object.entries(ROLE_API_TO_UI).map(([k, v]) => [v, k])
@@ -30,45 +30,45 @@ const initials = (name) => {
 };
 
 const toDeptUI = (d) => ({
-  id:           d.id,
-  name:         d.name || 'Unknown',
-  abbr:         (d.name || '').split(' ').map(w => w[0] || '').join('').toUpperCase().slice(0, 4),
-  headName:     d.headUserName || '—',
-  headEmail:    '',
+  id: d.id,
+  name: d.name || 'Unknown',
+  abbr: (d.name || '').split(' ').map(w => w[0] || '').join('').toUpperCase().slice(0, 4),
+  headName: d.headUserName || '—',
+  headEmail: '',
   headInitials: initials(d.headUserName),
-  parent:       d.parentDepartmentName || '—',
-  employees:    Number(d.employeeCount) || 0,
-  status:       d.status === 'active' ? 'Active' : 'Inactive',
+  parent: d.parentDepartmentName || '—',
+  employees: Number(d.employeeCount) || 0,
+  status: d.status === 'active' ? 'Active' : 'Inactive',
 });
 
 const toCatUI = (c) => ({
-  id:          c.id,
-  name:        c.name,
-  icon:        c.customFields?.icon || 'cpu',
+  id: c.id,
+  name: c.name,
+  icon: c.customFields?.icon || 'cpu',
   description: c.customFields?.description || '',
-  assetCount:  Number(c.assetCount) || 0,
-  status:      'Active',   // asset_categories has no status column in live DB
+  assetCount: Number(c.assetCount) || 0,
+  status: 'Active',   // asset_categories has no status column in live DB
 });
 
 const toEmpUI = (e) => ({
-  id:       e.id,
-  name:     e.name,
-  email:    e.email,
-  role:     ROLE_API_TO_UI[e.role] || e.role,
-  dept:     e.departmentName || '—',
-  deptId:   e.departmentId   || null,
+  id: e.id,
+  name: e.name,
+  email: e.email,
+  role: ROLE_API_TO_UI[e.role] || e.role,
+  dept: e.departmentName || '—',
+  deptId: e.departmentId || null,
   initials: initials(e.name),
-  status:   e.status === 'active' ? 'Active' : 'Inactive',
+  status: e.status === 'active' ? 'Active' : 'Inactive',
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const CategoryIcon = ({ icon, className }) => {
   switch (icon) {
-    case 'cpu':   return <Cpu className={className} />;
+    case 'cpu': return <Cpu className={className} />;
     case 'chair': return <Armchair className={className} />;
-    case 'car':   return <Car className={className} />;
-    default:      return <BookOpen className={className} />;
+    case 'car': return <Car className={className} />;
+    default: return <BookOpen className={className} />;
   }
 };
 
@@ -143,13 +143,13 @@ function ModalFooter({ onCancel, onSave, saveLabel, saving }) {
 // ─── Departments Tab ──────────────────────────────────────────────────────────
 
 function DepartmentsTab({ departments, loading, error, reload }) {
-  const [searchQuery,  setSearchQuery]  = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [showStatusDD, setShowStatusDD] = useState(false);
-  const [isAddOpen,    setIsAddOpen]    = useState(false);
-  const [editDept,     setEditDept]     = useState(null);
-  const [saving,       setSaving]       = useState(false);
-  const [apiErr,       setApiErr]       = useState('');
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editDept, setEditDept] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [apiErr, setApiErr] = useState('');
 
   const [form, setForm] = useState({ name: '', abbr: '', parentId: '', headName: '', headEmail: '' });
 
@@ -184,7 +184,7 @@ function DepartmentsTab({ departments, loading, error, reload }) {
     setApiErr('');
     try {
       const payload = {
-        name:                 form.name.trim(),
+        name: form.name.trim(),
         parent_department_id: form.parentId || null,
       };
       if (editDept) {
@@ -433,10 +433,10 @@ function Arrow({ short }) {
 
 function CategoriesTab({ categories, loading, error, reload }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [isAddOpen,   setIsAddOpen]   = useState(false);
-  const [editCat,     setEditCat]     = useState(null);
-  const [saving,      setSaving]      = useState(false);
-  const [apiErr,      setApiErr]      = useState('');
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editCat, setEditCat] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [apiErr, setApiErr] = useState('');
   const [form, setForm] = useState({ name: '', description: '', icon: 'cpu' });
 
   const filtered = categories.filter(c =>
@@ -466,7 +466,7 @@ function CategoriesTab({ categories, loading, error, reload }) {
     setApiErr('');
     try {
       const payload = {
-        name:         form.name.trim(),
+        name: form.name.trim(),
         customFields: { icon: form.icon, description: form.description },
       };
       if (editCat) {
@@ -585,12 +585,12 @@ function CategoriesTab({ categories, loading, error, reload }) {
 
 function EmployeesTab({ employees, loading, error, reload, departments }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter,  setRoleFilter]  = useState('All Roles');
-  const [showRoleDD,  setShowRoleDD]  = useState(false);
-  const [isAddOpen,   setIsAddOpen]   = useState(false);
-  const [editEmp,     setEditEmp]     = useState(null);
-  const [saving,      setSaving]      = useState(false);
-  const [apiErr,      setApiErr]      = useState('');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
+  const [showRoleDD, setShowRoleDD] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editEmp, setEditEmp] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [apiErr, setApiErr] = useState('');
 
   const [form, setForm] = useState({ name: '', email: '', role: 'Employee', deptId: '' });
 
@@ -623,7 +623,7 @@ function EmployeesTab({ employees, loading, error, reload, departments }) {
       const calls = [];
       // Name / department update
       calls.push(updateEmployee(editEmp.id, {
-        name:          form.name.trim(),
+        name: form.name.trim(),
         department_id: form.deptId || null,
       }));
       // Role update (separate endpoint)
@@ -778,15 +778,15 @@ export default function OrganizationSetupScreen() {
 
   const [departments, setDepartments] = useState([]);
   const [deptLoading, setDeptLoading] = useState(true);
-  const [deptError,   setDeptError]   = useState('');
+  const [deptError, setDeptError] = useState('');
 
   const [categories, setCategories] = useState([]);
-  const [catLoading,  setCatLoading]  = useState(true);
-  const [catError,    setCatError]    = useState('');
+  const [catLoading, setCatLoading] = useState(true);
+  const [catError, setCatError] = useState('');
 
-  const [employees,  setEmployees]  = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [empLoading, setEmpLoading] = useState(true);
-  const [empError,   setEmpError]   = useState('');
+  const [empError, setEmpError] = useState('');
 
   const loadDepartments = useCallback(async () => {
     setDeptLoading(true);
@@ -832,9 +832,9 @@ export default function OrganizationSetupScreen() {
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
   const tabs = [
-    { key: 'departments', label: 'Departments',  sub: 'Manage organizational structure', Icon: Building2 },
-    { key: 'categories',  label: 'Categories',   sub: 'Manage asset categories',         Icon: Package   },
-    { key: 'employees',   label: 'Employees',    sub: 'Manage employee directory',       Icon: Users     },
+    { key: 'departments', label: 'Departments', sub: 'Manage organizational structure', Icon: Building2 },
+    { key: 'categories', label: 'Categories', sub: 'Manage asset categories', Icon: Package },
+    { key: 'employees', label: 'Employees', sub: 'Manage employee directory', Icon: Users },
   ];
 
   return (
@@ -865,8 +865,8 @@ export default function OrganizationSetupScreen() {
             key={key}
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-3 w-full px-6 py-4 text-left border-b-2 transition-all duration-200 ${activeTab === key
-                ? 'border-[#369588] text-[#369588] bg-[#369588]/5'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              ? 'border-[#369588] text-[#369588] bg-[#369588]/5'
+              : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
               }`}
           >
             <Icon className="w-5 h-5 shrink-0" />

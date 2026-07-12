@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Loader2, Plus, Search, X } from 'lucide-react';
-import { createAsset, getAssetMetadata, getAssets } from '../../features/assets/api/assetsApi';
+import { ChevronDown, Loader2, Plus, Search, X, Wrench } from 'lucide-react';
+import { createAsset, getAssetMetadata, getAssets, updateAsset } from '../../features/assets/api/assetsApi';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -205,6 +205,15 @@ export default function AssetsScreen() {
     }
   };
 
+  const handlePutInMaintenance = async (assetId) => {
+    try {
+      await updateAsset(assetId, { status: 'under_maintenance' });
+      setAssets((prev) => prev.map((a) => (a.id === assetId ? { ...a, status: 'under_maintenance' } : a)));
+    } catch (err) {
+      setError(err.message || 'Could not put asset into maintenance.');
+    }
+  };
+
   return (
     <div className="space-y-6 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm md:p-8">
       <button
@@ -297,19 +306,20 @@ export default function AssetsScreen() {
                 <th className="px-6 py-4 font-semibold">Category</th>
                 <th className="px-6 py-4 font-semibold">Status</th>
                 <th className="px-6 py-4 font-semibold">Location</th>
+                <th className="px-6 py-4 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-10 text-center text-slate-500">
+                  <td colSpan="6" className="px-6 py-10 text-center text-slate-500">
                     <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-[#1D546D]" />
                     Loading assets...
                   </td>
                 </tr>
               ) : filteredAssets.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-10 text-center text-slate-500">
+                  <td colSpan="6" className="px-6 py-10 text-center text-slate-500">
                     No assets found.
                   </td>
                 </tr>
@@ -323,6 +333,18 @@ export default function AssetsScreen() {
                       <AssetStatusBadge status={asset.status} />
                     </td>
                     <td className="px-6 py-4 text-slate-600">{asset.location || '-'}</td>
+                    <td className="px-6 py-4 text-right">
+                      {asset.status === 'available' && (
+                        <button
+                          onClick={() => handlePutInMaintenance(asset.id)}
+                          className="inline-flex items-center rounded-lg bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700 transition hover:bg-orange-100"
+                          title="Put in Maintenance"
+                        >
+                          <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                          Maintenance
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}

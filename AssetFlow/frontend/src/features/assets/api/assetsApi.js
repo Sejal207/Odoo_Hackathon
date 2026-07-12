@@ -40,3 +40,12 @@ export const createAsset = async (payload) => {
     return parseError(error, 'Unable to create asset right now.');
   }
 };
+
+export const updateAsset = async (id, payload) => {
+  try {
+    const response = await apiClient.patch(`/assets/${id}`, payload);
+    return unwrapData(response);
+  } catch (error) {
+    return parseError(error, 'Unable to update asset right now.');
+  }
+};

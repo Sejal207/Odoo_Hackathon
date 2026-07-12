@@ -34,6 +34,27 @@ export default function MaintenanceScreen() {
 
   useEffect(load, [activeTab]);
 
+  const handleAction = async (req, action) => {
+    try {
+      if (action === 'approve') {
+        await maintenanceApi.approveMaintenance(req.id);
+      } else if (action === 'assign') {
+        const techName = window.prompt('Enter Technician Name:');
+        if (!techName) return;
+        await maintenanceApi.assignTechnician(req.id, techName);
+      } else if (action === 'start') {
+        await maintenanceApi.startMaintenance(req.id);
+      } else if (action === 'resolve') {
+        const notes = window.prompt('Enter Resolution Notes (optional):');
+        if (notes === null) return;
+        await maintenanceApi.resolveMaintenance(req.id, notes);
+      }
+      load();
+    } catch (err) {
+      alert(err.message || 'Could not perform action.');
+    }
+  };
+
   return (
     <div className="space-y-6 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm md:p-8">
       <div className="flex items-center justify-between">
@@ -83,7 +104,29 @@ export default function MaintenanceScreen() {
                   </div>
                 </div>
                 <span className="hidden text-sm text-gray-500 sm:block">{req.department}</span>
-                <StatusBadge status={req.status} />
+                <div className="flex items-center gap-4">
+                  <StatusBadge status={req.status} />
+                  {req.status === 'pending' && (
+                    <button onClick={() => handleAction(req, 'approve')} className="rounded-lg bg-[#369588] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#2f8176]">
+                      Approve
+                    </button>
+                  )}
+                  {req.status === 'approved' && (
+                    <button onClick={() => handleAction(req, 'assign')} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">
+                      Assign Tech
+                    </button>
+                  )}
+                  {req.status === 'technician_assigned' && (
+                    <button onClick={() => handleAction(req, 'start')} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+                      Start Progress
+                    </button>
+                  )}
+                  {req.status === 'in_progress' && (
+                    <button onClick={() => handleAction(req, 'resolve')} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+                      Resolve
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
