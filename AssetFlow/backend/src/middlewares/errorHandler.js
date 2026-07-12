@@ -1,25 +1,31 @@
+const { errorResponse } = require('../utils/response');
+
 const errorHandler = (err, req, res, next) => {
   console.error(err.stack);
 
-  let statusCode = err.statusCode || 500;
-  let message = err.message || 'Internal Server Error';
+  // If it's already an AppError, we have the code and statusCode
+  if (err.statusCode && err.code) {
+    return errorResponse(res, err);
+  }
 
-  // Prisma unique constraint violation
-  if (err.code === 'P2002') {
+  let statusCode = err.statusCode || 500;
+  let code = 'INTERNAL_SERVER_ERROR';
+  let message = err.message || 'An unexpected error occurred.';
+
+  // Postgres unique constraint violation
+  if (err.code === '23505') {
     statusCode = 409;
+    code = 'CONFLICT';
     message = 'Duplicate field value entered';
   }
 
-  // Prisma record not found
-  if (err.code === 'P2025') {
-    statusCode = 404;
-    message = 'Record not found';
-  }
-
-  res.status(statusCode).json({
+  return res.status(statusCode).json({
     success: false,
-    message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    error: {
+      code,
+      message,
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    }
   });
 };
 

@@ -1,12 +1,14 @@
 const { Pool } = require('pg');
-const { PrismaPg } = require('@prisma/adapter-pg');
-const { PrismaClient } = require('@prisma/client');
 require('dotenv').config();
 
-const connectionString = `${process.env.DATABASE_URL}`;
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+const connectionString = process.env.DATABASE_URL;
 
-const prisma = new PrismaClient({ adapter });
+const pool = new Pool({
+  connectionString,
+  // Add additional config like max, idleTimeoutMillis if needed for prod
+});
 
-module.exports = prisma;
+module.exports = {
+  pool,
+  query: (text, params) => pool.query(text, params)
+};
