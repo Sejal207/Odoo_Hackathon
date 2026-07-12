@@ -48,8 +48,10 @@ export default function Topbar() {
     apiClient
       .get('/notifications', { params: { unread: true } })
       .then((res) => {
-        const notifications = res.data?.data ?? res.data;
-        if (!cancelled) setUnreadCount(Array.isArray(notifications) ? notifications.length : 0);
+        const data = res.data?.data ?? res.data;
+        // The API returns { notifications: [], pagination: { total, ... } }
+        const total = data?.pagination?.total ?? (Array.isArray(data?.notifications) ? data.notifications.length : 0);
+        if (!cancelled) setUnreadCount(total);
       })
       .catch(() => { }); // silent - the bell just shows 0 if this fails, non-critical
     return () => { cancelled = true; };

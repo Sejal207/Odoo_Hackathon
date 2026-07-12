@@ -1,43 +1,74 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Settings, ShieldAlert, Building2, Package, Users,
   Search, ChevronDown, Plus, Pencil, MoreVertical,
-  ChevronRight, ChevronLeft, X, Tag, Cpu, Armchair, Car, BookOpen
+  ChevronRight, ChevronLeft, X, Tag, Cpu, Armchair, Car, BookOpen,
+  Loader2, AlertCircle
 } from 'lucide-react';
+import {
+  getDepartments, createDepartment, updateDepartment, deactivateDepartment,
+  getCategories, createCategory, updateCategory, deactivateCategory,
+  getEmployees, updateEmployee, updateEmployeeRole, updateEmployeeStatus,
+} from '../../services/orgApi';
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+// ─── Role maps (DB value ↔ UI label) ─────────────────────────────────────────
+const ROLE_API_TO_UI = {
+  admin:           'Admin',
+  asset_manager:   'Asset Manager',
+  department_head: 'Department Head',
+  employee:        'Employee',
+};
+const ROLE_UI_TO_API = Object.fromEntries(
+  Object.entries(ROLE_API_TO_UI).map(([k, v]) => [v, k])
+);
+const UI_ROLES = Object.values(ROLE_API_TO_UI);
 
-const INITIAL_DEPARTMENTS = [
-  { id: '1', name: 'Engineering', abbr: 'ENG', headName: 'Aditi Rao', headEmail: 'aditi@company.com', headInitials: 'AR', parent: '—', employees: 42, status: 'Active' },
-  { id: '2', name: 'Facilities', abbr: 'FAC', headName: 'Rohan Mehta', headEmail: 'rohan@company.com', headInitials: 'RM', parent: '—', employees: 18, status: 'Active' },
-  { id: '3', name: 'Field Ops (East)', abbr: 'FO-E', headName: 'Sana Iqbal', headEmail: 'sana@company.com', headInitials: 'SI', parent: 'Field Ops', employees: 27, status: 'Inactive' },
-  { id: '4', name: 'Field Ops (West)', abbr: 'FO-W', headName: 'Vikram Kumar', headEmail: 'vikram@company.com', headInitials: 'VK', parent: 'Field Ops', employees: 25, status: 'Active' },
-  { id: '5', name: 'IT Department', abbr: 'IT', headName: 'Neeraj Pandey', headEmail: 'neeraj@company.com', headInitials: 'NP', parent: '—', employees: 12, status: 'Active' },
-];
+// ─── Data transformers (API shape → UI shape) ────────────────────────────────
+const initials = (name) => {
+  if (!name) return '??';
+  return name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2) || '??';
+};
 
-const INITIAL_CATEGORIES = [
-  { id: '1', name: 'Electronics', icon: 'cpu', assetCount: 24, description: 'Laptops, monitors, peripherals and other electronic devices', status: 'Active' },
-  { id: '2', name: 'Furniture', icon: 'chair', assetCount: 15, description: 'Desks, chairs, cabinets and other office furniture', status: 'Active' },
-  { id: '3', name: 'Vehicles', icon: 'car', assetCount: 6, description: 'Fleet vehicles, vans and company transport', status: 'Active' },
-  { id: '4', name: 'Shared Spaces', icon: 'book', assetCount: 4, description: 'Conference rooms and bookable shared spaces', status: 'Active' },
-];
+const toDeptUI = (d) => ({
+  id:           d.id,
+  name:         d.name || 'Unknown',
+  abbr:         (d.name || '').split(' ').map(w => w[0] || '').join('').toUpperCase().slice(0, 4),
+  headName:     d.headUserName || '—',
+  headEmail:    '',
+  headInitials: initials(d.headUserName),
+  parent:       d.parentDepartmentName || '—',
+  employees:    Number(d.employeeCount) || 0,
+  status:       d.status === 'active' ? 'Active' : 'Inactive',
+});
 
-const INITIAL_EMPLOYEES = [
-  { id: '1', name: 'Alice Admin', email: 'admin@example.com', role: 'Admin', dept: 'Engineering', initials: 'AA', status: 'Active' },
-  { id: '2', name: 'Bob Manager', email: 'bob@example.com', role: 'Asset Manager', dept: 'Operations', initials: 'BM', status: 'Active' },
-  { id: '3', name: 'Charlie Head', email: 'charlie@example.com', role: 'Department Head', dept: 'Engineering', initials: 'CH', status: 'Active' },
-  { id: '4', name: 'Dave Emp', email: 'dave@example.com', role: 'Employee', dept: 'Engineering', initials: 'DE', status: 'Active' },
-  { id: '5', name: 'Eve Emp', email: 'eve@example.com', role: 'Employee', dept: 'HR', initials: 'EE', status: 'Inactive' },
-];
+const toCatUI = (c) => ({
+  id:          c.id,
+  name:        c.name,
+  icon:        c.customFields?.icon || 'cpu',
+  description: c.customFields?.description || '',
+  assetCount:  Number(c.assetCount) || 0,
+  status:      'Active',   // asset_categories has no status column in live DB
+});
+
+const toEmpUI = (e) => ({
+  id:       e.id,
+  name:     e.name,
+  email:    e.email,
+  role:     ROLE_API_TO_UI[e.role] || e.role,
+  dept:     e.departmentName || '—',
+  deptId:   e.departmentId   || null,
+  initials: initials(e.name),
+  status:   e.status === 'active' ? 'Active' : 'Inactive',
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const CategoryIcon = ({ icon, className }) => {
   switch (icon) {
-    case 'cpu': return <Cpu className={className} />;
+    case 'cpu':   return <Cpu className={className} />;
     case 'chair': return <Armchair className={className} />;
-    case 'car': return <Car className={className} />;
-    default: return <BookOpen className={className} />;
+    case 'car':   return <Car className={className} />;
+    default:      return <BookOpen className={className} />;
   }
 };
 
@@ -48,17 +79,79 @@ const StatusBadge = ({ status }) => (
   </div>
 );
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const LoadingRow = ({ cols }) => (
+  <tr>
+    <td colSpan={cols} className="px-6 py-10 text-center">
+      <div className="flex justify-center items-center gap-2 text-slate-400">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>Loading…</span>
+      </div>
+    </td>
+  </tr>
+);
 
-function DepartmentsTab({ departments, setDepartments }) {
-  const [searchQuery, setSearchQuery] = useState('');
+const ErrorRow = ({ cols, message }) => (
+  <tr>
+    <td colSpan={cols} className="px-6 py-10 text-center">
+      <div className="flex justify-center items-center gap-2 text-red-400">
+        <AlertCircle className="w-5 h-5" />
+        <span>{message}</span>
+      </div>
+    </td>
+  </tr>
+);
+
+// ─── Shared UI atoms ──────────────────────────────────────────────────────────
+
+const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#369588] bg-white';
+
+function FormField({ label, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X className="h-5 w-5" /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ModalFooter({ onCancel, onSave, saveLabel, saving }) {
+  return (
+    <div className="mt-6 flex justify-end gap-3">
+      <button onClick={onCancel} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 transition-colors disabled:opacity-50">Cancel</button>
+      <button onClick={onSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#369588] hover:bg-[#2c7a6f] rounded-lg transition-colors disabled:opacity-50">
+        {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+        {saveLabel}
+      </button>
+    </div>
+  );
+}
+
+// ─── Departments Tab ──────────────────────────────────────────────────────────
+
+function DepartmentsTab({ departments, loading, error, reload }) {
+  const [searchQuery,  setSearchQuery]  = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [showStatusDD, setShowStatusDD] = useState(false);
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [editDept, setEditDept] = useState(null);
+  const [isAddOpen,    setIsAddOpen]    = useState(false);
+  const [editDept,     setEditDept]     = useState(null);
+  const [saving,       setSaving]       = useState(false);
+  const [apiErr,       setApiErr]       = useState('');
 
-  // New dept form state
-  const [form, setForm] = useState({ name: '', abbr: '', parent: 'None', headName: '', headEmail: '' });
+  const [form, setForm] = useState({ name: '', abbr: '', parentId: '', headName: '', headEmail: '' });
 
   const filtered = departments.filter(d => {
     const matchesSearch = d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -67,30 +160,55 @@ function DepartmentsTab({ departments, setDepartments }) {
     return matchesSearch && matchesStatus;
   });
 
-  const handleSave = () => {
-    if (!form.name.trim()) return;
-    if (editDept) {
-      setDepartments(prev => prev.map(d => d.id === editDept.id ? { ...d, ...form } : d));
-    } else {
-      setDepartments(prev => [...prev, {
-        id: String(Date.now()), ...form,
-        headInitials: form.headName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
-        employees: 0, status: 'Active',
-      }]);
-    }
-    setForm({ name: '', abbr: '', parent: 'None', headName: '', headEmail: '' });
-    setIsAddOpen(false);
+  const closeModal = () => { setIsAddOpen(false); setEditDept(null); setApiErr(''); };
+
+  const openAdd = () => {
     setEditDept(null);
+    setForm({ name: '', abbr: '', parentId: '', headName: '', headEmail: '' });
+    setApiErr('');
+    setIsAddOpen(true);
   };
 
   const openEdit = (dept) => {
     setEditDept(dept);
-    setForm({ name: dept.name, abbr: dept.abbr, parent: dept.parent, headName: dept.headName, headEmail: dept.headEmail });
+    // Find parentId from departments list
+    const parent = departments.find(d => d.name === dept.parent);
+    setForm({ name: dept.name, abbr: dept.abbr, parentId: parent?.id || '', headName: dept.headName, headEmail: dept.headEmail });
+    setApiErr('');
     setIsAddOpen(true);
   };
 
-  const toggleStatus = (id) => {
-    setDepartments(prev => prev.map(d => d.id === id ? { ...d, status: d.status === 'Active' ? 'Inactive' : 'Active' } : d));
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    setApiErr('');
+    try {
+      const payload = {
+        name:                 form.name.trim(),
+        parent_department_id: form.parentId || null,
+      };
+      if (editDept) {
+        await updateDepartment(editDept.id, payload);
+      } else {
+        await createDepartment(payload);
+      }
+      closeModal();
+      reload();
+    } catch (err) {
+      setApiErr(err?.response?.data?.error?.message || 'An error occurred. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (dept) => {
+    if (dept.status !== 'Active') return; // no reactivate endpoint
+    try {
+      await deactivateDepartment(dept.id);
+      reload();
+    } catch (err) {
+      alert(err?.response?.data?.error?.message || 'Could not deactivate department.');
+    }
   };
 
   return (
@@ -141,7 +259,7 @@ function DepartmentsTab({ departments, setDepartments }) {
           </div>
 
           <button
-            onClick={() => { setEditDept(null); setForm({ name: '', abbr: '', parent: 'None', headName: '', headEmail: '' }); setIsAddOpen(true); }}
+            onClick={openAdd}
             className="flex items-center justify-center px-4 py-2 bg-[#0a3143] text-white rounded-lg hover:bg-[#072432] transition-colors font-medium text-sm"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -165,7 +283,11 @@ function DepartmentsTab({ departments, setDepartments }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {loading ? (
+                <LoadingRow cols={6} />
+              ) : error ? (
+                <ErrorRow cols={6} message={error} />
+              ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="px-6 py-10 text-center text-slate-400">No departments match your search.</td>
                 </tr>
@@ -201,7 +323,12 @@ function DepartmentsTab({ departments, setDepartments }) {
                       <button onClick={() => openEdit(dept)} className="p-1.5 text-slate-400 hover:text-[#369588] border border-slate-200 rounded hover:border-[#369588] transition-colors" title="Edit">
                         <Pencil className="w-4 h-4" />
                       </button>
-                      <button onClick={() => toggleStatus(dept.id)} className="p-1.5 text-slate-400 hover:text-orange-500 border border-slate-200 rounded hover:border-orange-300 transition-colors" title="Toggle Status">
+                      <button
+                        onClick={() => handleToggleStatus(dept)}
+                        disabled={dept.status !== 'Active'}
+                        className="p-1.5 text-slate-400 hover:text-orange-500 border border-slate-200 rounded hover:border-orange-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={dept.status === 'Active' ? 'Deactivate' : 'Already inactive'}
+                      >
                         <MoreVertical className="w-4 h-4" />
                       </button>
                     </div>
@@ -225,53 +352,54 @@ function DepartmentsTab({ departments, setDepartments }) {
       <div>
         <h3 className="text-lg font-bold text-[#0a3143] mb-4">Department Hierarchy Preview</h3>
         <div className="bg-white border border-slate-200 rounded-xl p-6 overflow-x-auto shadow-sm">
-          <div className="flex items-center gap-2 min-w-max">
-            {/* Head Office */}
-            <HierarchyNode label="Head Office" abbr="ROOT" />
-            <Arrow />
-            <HierarchyNode label="Engineering" abbr="ENG" />
-            <Arrow />
-            <HierarchyNode label="Field Ops" abbr="FO" />
-            <div className="flex flex-col gap-3 ml-2">
-              <div className="flex items-center gap-2">
-                <Arrow short />
-                <HierarchyNode label="Field Ops (East)" abbr="FO-E" />
-              </div>
-              <div className="flex items-center gap-2">
-                <Arrow short />
-                <HierarchyNode label="Field Ops (West)" abbr="FO-W" />
-                <Arrow />
-                <HierarchyNode label="Facilities" abbr="FAC" />
-              </div>
+          {departments.length === 0 ? (
+            <p className="text-slate-400 text-sm">No departments yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2 min-w-max">
+              {/* Root departments */}
+              {departments.filter(d => d.parent === '—').map(root => (
+                <div key={root.id} className="flex flex-col gap-2">
+                  <HierarchyNode label={root.name} abbr={root.abbr} />
+                  {departments.filter(d => d.parent === root.name).map(child => (
+                    <div key={child.id} className="flex items-center gap-2 ml-6">
+                      <Arrow short />
+                      <HierarchyNode label={child.name} abbr={child.abbr} />
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* Modal */}
       {isAddOpen && (
-        <Modal title={editDept ? 'Edit Department' : 'Add New Department'} onClose={() => { setIsAddOpen(false); setEditDept(null); }}>
+        <Modal title={editDept ? 'Edit Department' : 'Add New Department'} onClose={closeModal}>
           <div className="space-y-4">
-            <FormField label="Department Name" placeholder="e.g. Marketing">
+            <FormField label="Department Name">
               <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Marketing" />
             </FormField>
             <FormField label="Abbreviation">
-              <input type="text" value={form.abbr} onChange={e => setForm(f => ({ ...f, abbr: e.target.value }))} className={inputCls} placeholder="e.g. MKT" />
+              <input type="text" value={form.abbr} onChange={e => setForm(f => ({ ...f, abbr: e.target.value }))} className={inputCls} placeholder="e.g. MKT (display only)" />
             </FormField>
             <FormField label="Parent Department">
-              <select value={form.parent} onChange={e => setForm(f => ({ ...f, parent: e.target.value }))} className={inputCls}>
-                <option>None</option>
-                {departments.filter(d => !editDept || d.id !== editDept.id).map(d => <option key={d.id}>{d.name}</option>)}
+              <select value={form.parentId} onChange={e => setForm(f => ({ ...f, parentId: e.target.value }))} className={inputCls}>
+                <option value="">None</option>
+                {departments.filter(d => !editDept || d.id !== editDept.id).map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
               </select>
             </FormField>
             <FormField label="Head Name">
-              <input type="text" value={form.headName} onChange={e => setForm(f => ({ ...f, headName: e.target.value }))} className={inputCls} placeholder="e.g. Jane Smith" />
+              <input type="text" value={form.headName} onChange={e => setForm(f => ({ ...f, headName: e.target.value }))} className={inputCls} placeholder="e.g. Jane Smith (display only)" />
             </FormField>
             <FormField label="Head Email">
-              <input type="email" value={form.headEmail} onChange={e => setForm(f => ({ ...f, headEmail: e.target.value }))} className={inputCls} placeholder="e.g. jane@company.com" />
+              <input type="email" value={form.headEmail} onChange={e => setForm(f => ({ ...f, headEmail: e.target.value }))} className={inputCls} placeholder="e.g. jane@company.com (display only)" />
             </FormField>
+            {apiErr && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{apiErr}</p>}
           </div>
-          <ModalFooter onCancel={() => { setIsAddOpen(false); setEditDept(null); }} onSave={handleSave} saveLabel={editDept ? 'Save Changes' : 'Add Department'} />
+          <ModalFooter onCancel={closeModal} onSave={handleSave} saveLabel={editDept ? 'Save Changes' : 'Add Department'} saving={saving} />
         </Modal>
       )}
     </div>
@@ -303,10 +431,12 @@ function Arrow({ short }) {
 
 // ─── Categories Tab ───────────────────────────────────────────────────────────
 
-function CategoriesTab({ categories, setCategories }) {
+function CategoriesTab({ categories, loading, error, reload }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [editCat, setEditCat] = useState(null);
+  const [isAddOpen,   setIsAddOpen]   = useState(false);
+  const [editCat,     setEditCat]     = useState(null);
+  const [saving,      setSaving]      = useState(false);
+  const [apiErr,      setApiErr]      = useState('');
   const [form, setForm] = useState({ name: '', description: '', icon: 'cpu' });
 
   const filtered = categories.filter(c =>
@@ -314,19 +444,54 @@ function CategoriesTab({ categories, setCategories }) {
     c.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSave = () => {
-    if (!form.name.trim()) return;
-    if (editCat) {
-      setCategories(prev => prev.map(c => c.id === editCat.id ? { ...c, ...form } : c));
-    } else {
-      setCategories(prev => [...prev, { id: String(Date.now()), assetCount: 0, status: 'Active', ...form }]);
-    }
+  const closeModal = () => { setIsAddOpen(false); setEditCat(null); setApiErr(''); };
+
+  const openAdd = () => {
+    setEditCat(null);
     setForm({ name: '', description: '', icon: 'cpu' });
-    setIsAddOpen(false); setEditCat(null);
+    setApiErr('');
+    setIsAddOpen(true);
   };
 
-  const openEdit = (cat) => { setEditCat(cat); setForm({ name: cat.name, description: cat.description, icon: cat.icon }); setIsAddOpen(true); };
-  const toggleStatus = (id) => setCategories(prev => prev.map(c => c.id === id ? { ...c, status: c.status === 'Active' ? 'Inactive' : 'Active' } : c));
+  const openEdit = (cat) => {
+    setEditCat(cat);
+    setForm({ name: cat.name, description: cat.description, icon: cat.icon });
+    setApiErr('');
+    setIsAddOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    setApiErr('');
+    try {
+      const payload = {
+        name:         form.name.trim(),
+        customFields: { icon: form.icon, description: form.description },
+      };
+      if (editCat) {
+        await updateCategory(editCat.id, payload);
+      } else {
+        await createCategory(payload);
+      }
+      closeModal();
+      reload();
+    } catch (err) {
+      setApiErr(err?.response?.data?.error?.message || 'An error occurred. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (cat) => {
+    // Categories have no reactivate endpoint; deactivate only when Active
+    try {
+      await deactivateCategory(cat.id);
+      reload();
+    } catch (err) {
+      alert(err?.response?.data?.error?.message || 'Could not deactivate category.');
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -342,44 +507,56 @@ function CategoriesTab({ categories, setCategories }) {
             </div>
             <input type="text" className="block w-64 pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#369588] bg-white text-sm" placeholder="Search categories..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
           </div>
-          <button onClick={() => { setEditCat(null); setForm({ name: '', description: '', icon: 'cpu' }); setIsAddOpen(true); }} className="flex items-center justify-center px-4 py-2 bg-[#0a3143] text-white rounded-lg hover:bg-[#072432] transition-colors font-medium text-sm">
+          <button onClick={openAdd} className="flex items-center justify-center px-4 py-2 bg-[#0a3143] text-white rounded-lg hover:bg-[#072432] transition-colors font-medium text-sm">
             <Plus className="h-4 w-4 mr-2" />Add Category
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filtered.length === 0 ? (
-          <p className="col-span-4 text-center text-slate-400 py-10">No categories match your search.</p>
-        ) : filtered.map(cat => (
-          <div key={cat.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-xl bg-[#e8f1ef] flex items-center justify-center text-[#369588]">
-                <CategoryIcon icon={cat.icon} className="w-6 h-6" />
+      {loading ? (
+        <div className="flex justify-center items-center gap-2 text-slate-400 py-10">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>Loading…</span>
+        </div>
+      ) : error ? (
+        <div className="flex justify-center items-center gap-2 text-red-400 py-10">
+          <AlertCircle className="w-5 h-5" />
+          <span>{error}</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.length === 0 ? (
+            <p className="col-span-4 text-center text-slate-400 py-10">No categories match your search.</p>
+          ) : filtered.map(cat => (
+            <div key={cat.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-start justify-between mb-4">
+                <div className="w-12 h-12 rounded-xl bg-[#e8f1ef] flex items-center justify-center text-[#369588]">
+                  <CategoryIcon icon={cat.icon} className="w-6 h-6" />
+                </div>
+                <StatusBadge status={cat.status} />
               </div>
-              <StatusBadge status={cat.status} />
+              <h3 className="font-bold text-slate-900 mb-1">{cat.name}</h3>
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed">{cat.description}</p>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-1 text-xs text-slate-500">
+                  <Tag className="w-3 h-3" /> <span>{cat.assetCount} assets</span>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => openEdit(cat)} className="p-1.5 text-slate-400 hover:text-[#369588] border border-slate-200 rounded hover:border-[#369588] transition-colors">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handleToggleStatus(cat)} className="p-1.5 text-slate-400 hover:text-orange-500 border border-slate-200 rounded hover:border-orange-300 transition-colors">
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
-            <h3 className="font-bold text-slate-900 mb-1">{cat.name}</h3>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">{cat.description}</p>
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <div className="flex items-center gap-1 text-xs text-slate-500">
-                <Tag className="w-3 h-3" /> <span>{cat.assetCount} assets</span>
-              </div>
-              <div className="flex gap-1">
-                <button onClick={() => openEdit(cat)} className="p-1.5 text-slate-400 hover:text-[#369588] border border-slate-200 rounded hover:border-[#369588] transition-colors">
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => toggleStatus(cat.id)} className="p-1.5 text-slate-400 hover:text-orange-500 border border-slate-200 rounded hover:border-orange-300 transition-colors">
-                  <MoreVertical className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {isAddOpen && (
-        <Modal title={editCat ? 'Edit Category' : 'Add New Category'} onClose={() => { setIsAddOpen(false); setEditCat(null); }}>
+        <Modal title={editCat ? 'Edit Category' : 'Add New Category'} onClose={closeModal}>
           <div className="space-y-4">
             <FormField label="Category Name">
               <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Software" />
@@ -395,8 +572,9 @@ function CategoriesTab({ categories, setCategories }) {
                 <option value="book">Shared Space (Book)</option>
               </select>
             </FormField>
+            {apiErr && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{apiErr}</p>}
           </div>
-          <ModalFooter onCancel={() => { setIsAddOpen(false); setEditCat(null); }} onSave={handleSave} saveLabel={editCat ? 'Save Changes' : 'Add Category'} />
+          <ModalFooter onCancel={closeModal} onSave={handleSave} saveLabel={editCat ? 'Save Changes' : 'Add Category'} saving={saving} />
         </Modal>
       )}
     </div>
@@ -405,15 +583,16 @@ function CategoriesTab({ categories, setCategories }) {
 
 // ─── Employees Tab ────────────────────────────────────────────────────────────
 
-const ROLES = ['Admin', 'Asset Manager', 'Department Head', 'Employee'];
-
-function EmployeesTab({ employees, setEmployees, departments }) {
+function EmployeesTab({ employees, loading, error, reload, departments }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('All Roles');
-  const [showRoleDD, setShowRoleDD] = useState(false);
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [editEmp, setEditEmp] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', role: 'Employee', dept: departments[0]?.name || '' });
+  const [roleFilter,  setRoleFilter]  = useState('All Roles');
+  const [showRoleDD,  setShowRoleDD]  = useState(false);
+  const [isAddOpen,   setIsAddOpen]   = useState(false);
+  const [editEmp,     setEditEmp]     = useState(null);
+  const [saving,      setSaving]      = useState(false);
+  const [apiErr,      setApiErr]      = useState('');
+
+  const [form, setForm] = useState({ name: '', email: '', role: 'Employee', deptId: '' });
 
   const filtered = employees.filter(e => {
     const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -422,23 +601,54 @@ function EmployeesTab({ employees, setEmployees, departments }) {
     return matchesSearch && matchesRole;
   });
 
-  const handleSave = () => {
-    if (!form.name.trim()) return;
-    if (editEmp) {
-      setEmployees(prev => prev.map(e => e.id === editEmp.id ? { ...e, ...form, initials: form.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) } : e));
-    } else {
-      setEmployees(prev => [...prev, {
-        id: String(Date.now()), ...form,
-        initials: form.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
-        status: 'Active',
-      }]);
-    }
-    setForm({ name: '', email: '', role: 'Employee', dept: departments[0]?.name || '' });
-    setIsAddOpen(false); setEditEmp(null);
+  const closeModal = () => { setIsAddOpen(false); setEditEmp(null); setApiErr(''); };
+
+  const openEdit = (emp) => {
+    setEditEmp(emp);
+    setForm({ name: emp.name, email: emp.email, role: emp.role, deptId: emp.deptId || '' });
+    setApiErr('');
+    setIsAddOpen(true);
   };
 
-  const openEdit = (emp) => { setEditEmp(emp); setForm({ name: emp.name, email: emp.email, role: emp.role, dept: emp.dept }); setIsAddOpen(true); };
-  const toggleStatus = (id) => setEmployees(prev => prev.map(e => e.id === id ? { ...e, status: e.status === 'Active' ? 'Inactive' : 'Active' } : e));
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    if (!editEmp) {
+      // No POST /employees — employees are created via auth/invite flow
+      setApiErr('New employees must be invited via the auth flow. Only existing employees can be edited here.');
+      return;
+    }
+    setSaving(true);
+    setApiErr('');
+    try {
+      const calls = [];
+      // Name / department update
+      calls.push(updateEmployee(editEmp.id, {
+        name:          form.name.trim(),
+        department_id: form.deptId || null,
+      }));
+      // Role update (separate endpoint)
+      if (form.role !== editEmp.role) {
+        calls.push(updateEmployeeRole(editEmp.id, ROLE_UI_TO_API[form.role]));
+      }
+      await Promise.all(calls);
+      closeModal();
+      reload();
+    } catch (err) {
+      setApiErr(err?.response?.data?.error?.message || 'An error occurred. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (emp) => {
+    const newStatus = emp.status === 'Active' ? 'inactive' : 'active';
+    try {
+      await updateEmployeeStatus(emp.id, newStatus);
+      reload();
+    } catch (err) {
+      alert(err?.response?.data?.error?.message || 'Could not update employee status.');
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -455,7 +665,7 @@ function EmployeesTab({ employees, setEmployees, departments }) {
             </button>
             {showRoleDD && (
               <div className="absolute top-full mt-1 left-0 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-20">
-                {['All Roles', ...ROLES].map(r => (
+                {['All Roles', ...UI_ROLES].map(r => (
                   <button key={r} className={`block w-full text-left px-4 py-2 text-sm hover:bg-slate-50 ${roleFilter === r ? 'text-[#369588] font-semibold' : 'text-slate-700'}`} onClick={() => { setRoleFilter(r); setShowRoleDD(false); }}>
                     {r}
                   </button>
@@ -472,7 +682,7 @@ function EmployeesTab({ employees, setEmployees, departments }) {
             <input type="text" className="block w-64 pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#369588] bg-white text-sm" placeholder="Search employees..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
           </div>
 
-          <button onClick={() => { setEditEmp(null); setForm({ name: '', email: '', role: 'Employee', dept: departments[0]?.name || '' }); setIsAddOpen(true); }} className="flex items-center justify-center px-4 py-2 bg-[#0a3143] text-white rounded-lg hover:bg-[#072432] transition-colors font-medium text-sm">
+          <button onClick={() => { setEditEmp(null); setForm({ name: '', email: '', role: 'Employee', deptId: departments[0]?.id || '' }); setApiErr(''); setIsAddOpen(true); }} className="flex items-center justify-center px-4 py-2 bg-[#0a3143] text-white rounded-lg hover:bg-[#072432] transition-colors font-medium text-sm">
             <Plus className="h-4 w-4 mr-2" />Add Employee
           </button>
         </div>
@@ -490,7 +700,11 @@ function EmployeesTab({ employees, setEmployees, departments }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {loading ? (
+              <LoadingRow cols={5} />
+            ) : error ? (
+              <ErrorRow cols={5} message={error} />
+            ) : filtered.length === 0 ? (
               <tr><td colSpan="5" className="px-6 py-10 text-center text-slate-400">No employees match your search.</td></tr>
             ) : filtered.map(emp => (
               <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
@@ -511,7 +725,7 @@ function EmployeesTab({ employees, setEmployees, departments }) {
                 <td className="px-6 py-4 text-center">
                   <div className="flex justify-center gap-2">
                     <button onClick={() => openEdit(emp)} className="p-1.5 text-slate-400 hover:text-[#369588] border border-slate-200 rounded hover:border-[#369588] transition-colors"><Pencil className="w-4 h-4" /></button>
-                    <button onClick={() => toggleStatus(emp.id)} className="p-1.5 text-slate-400 hover:text-orange-500 border border-slate-200 rounded hover:border-orange-300 transition-colors"><MoreVertical className="w-4 h-4" /></button>
+                    <button onClick={() => handleToggleStatus(emp)} className="p-1.5 text-slate-400 hover:text-orange-500 border border-slate-200 rounded hover:border-orange-300 transition-colors"><MoreVertical className="w-4 h-4" /></button>
                   </div>
                 </td>
               </tr>
@@ -529,64 +743,30 @@ function EmployeesTab({ employees, setEmployees, departments }) {
       </div>
 
       {isAddOpen && (
-        <Modal title={editEmp ? 'Edit Employee' : 'Add New Employee'} onClose={() => { setIsAddOpen(false); setEditEmp(null); }}>
+        <Modal title={editEmp ? 'Edit Employee' : 'Add New Employee'} onClose={closeModal}>
           <div className="space-y-4">
             <FormField label="Full Name">
               <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. John Doe" />
             </FormField>
             <FormField label="Email">
-              <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputCls} placeholder="e.g. john@company.com" />
+              <input type="email" value={form.email} readOnly={!!editEmp} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputCls + (editEmp ? ' bg-slate-50 cursor-not-allowed' : '')} placeholder="e.g. john@company.com" />
             </FormField>
             <FormField label="Role">
               <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className={inputCls}>
-                {ROLES.map(r => <option key={r}>{r}</option>)}
+                {UI_ROLES.map(r => <option key={r}>{r}</option>)}
               </select>
             </FormField>
             <FormField label="Department">
-              <select value={form.dept} onChange={e => setForm(f => ({ ...f, dept: e.target.value }))} className={inputCls}>
-                {departments.map(d => <option key={d.id}>{d.name}</option>)}
+              <select value={form.deptId} onChange={e => setForm(f => ({ ...f, deptId: e.target.value }))} className={inputCls}>
+                <option value="">— None —</option>
+                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </FormField>
+            {apiErr && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{apiErr}</p>}
           </div>
-          <ModalFooter onCancel={() => { setIsAddOpen(false); setEditEmp(null); }} onSave={handleSave} saveLabel={editEmp ? 'Save Changes' : 'Add Employee'} />
+          <ModalFooter onCancel={closeModal} onSave={handleSave} saveLabel={editEmp ? 'Save Changes' : 'Add Employee'} saving={saving} />
         </Modal>
       )}
-    </div>
-  );
-}
-
-// ─── Shared UI atoms ──────────────────────────────────────────────────────────
-
-const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#369588] bg-white';
-
-function FormField({ label, children }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function Modal({ title, onClose, children }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <div className="flex justify-between items-center mb-5">
-          <h2 className="text-xl font-bold text-slate-900">{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X className="h-5 w-5" /></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ModalFooter({ onCancel, onSave, saveLabel }) {
-  return (
-    <div className="mt-6 flex justify-end gap-3">
-      <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 transition-colors">Cancel</button>
-      <button onClick={onSave} className="px-4 py-2 text-sm font-medium text-white bg-[#369588] hover:bg-[#2c7a6f] rounded-lg transition-colors">{saveLabel}</button>
     </div>
   );
 }
@@ -595,14 +775,66 @@ function ModalFooter({ onCancel, onSave, saveLabel }) {
 
 export default function OrganizationSetupScreen() {
   const [activeTab, setActiveTab] = useState('departments');
-  const [departments, setDepartments] = useState(INITIAL_DEPARTMENTS);
-  const [categories, setCategories] = useState(INITIAL_CATEGORIES);
-  const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
+
+  const [departments, setDepartments] = useState([]);
+  const [deptLoading, setDeptLoading] = useState(true);
+  const [deptError,   setDeptError]   = useState('');
+
+  const [categories, setCategories] = useState([]);
+  const [catLoading,  setCatLoading]  = useState(true);
+  const [catError,    setCatError]    = useState('');
+
+  const [employees,  setEmployees]  = useState([]);
+  const [empLoading, setEmpLoading] = useState(true);
+  const [empError,   setEmpError]   = useState('');
+
+  const loadDepartments = useCallback(async () => {
+    setDeptLoading(true);
+    setDeptError('');
+    try {
+      const data = await getDepartments();
+      setDepartments((data || []).map(toDeptUI));
+    } catch (err) {
+      setDeptError(err?.response?.data?.error?.message || 'Failed to load departments.');
+    } finally {
+      setDeptLoading(false);
+    }
+  }, []);
+
+  const loadCategories = useCallback(async () => {
+    setCatLoading(true);
+    setCatError('');
+    try {
+      const data = await getCategories();
+      setCategories((data || []).map(toCatUI));
+    } catch (err) {
+      setCatError(err?.response?.data?.error?.message || 'Failed to load categories.');
+    } finally {
+      setCatLoading(false);
+    }
+  }, []);
+
+  const loadEmployees = useCallback(async () => {
+    setEmpLoading(true);
+    setEmpError('');
+    try {
+      const data = await getEmployees();
+      setEmployees((data || []).map(toEmpUI));
+    } catch (err) {
+      setEmpError(err?.response?.data?.error?.message || 'Failed to load employees.');
+    } finally {
+      setEmpLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadDepartments(); }, [loadDepartments]);
+  useEffect(() => { loadCategories(); }, [loadCategories]);
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
   const tabs = [
-    { key: 'departments', label: 'Departments', sub: 'Manage organizational structure', Icon: Building2 },
-    { key: 'categories', label: 'Categories', sub: 'Manage asset categories', Icon: Package },
-    { key: 'employees', label: 'Employees', sub: 'Manage employee directory', Icon: Users },
+    { key: 'departments', label: 'Departments',  sub: 'Manage organizational structure', Icon: Building2 },
+    { key: 'categories',  label: 'Categories',   sub: 'Manage asset categories',         Icon: Package   },
+    { key: 'employees',   label: 'Employees',    sub: 'Manage employee directory',       Icon: Users     },
   ];
 
   return (
@@ -627,32 +859,14 @@ export default function OrganizationSetupScreen() {
       </div>
 
       {/* Tabs */}
-      {/* <div className="flex gap-6 border-b border-slate-200 mb-8">
-        {tabs.map(({ key, label, sub, Icon }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={`flex items-center gap-3 pb-4 px-1 border-b-2 transition-colors ${activeTab === key ? 'border-[#369588] text-[#369588]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          >
-            <Icon className="w-5 h-5" />
-            <div className="text-left">
-              <p className="text-sm font-semibold">{label}</p>
-              <p className="text-xs font-normal opacity-80">{sub}</p>
-            </div>
-          </button>
-        ))}
-      </div> */}
-
-
-      {/* Tabs */}
       <div className="grid grid-cols-3 gap-6 border-b border-slate-200 mb-8">
         {tabs.map(({ key, label, sub, Icon }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-3 w-full px-6 py-4 text-left border-b-2 transition-all duration-200 ${activeTab === key
-                ? "border-[#369588] text-[#369588] bg-[#369588]/5"
-                : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                ? 'border-[#369588] text-[#369588] bg-[#369588]/5'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
               }`}
           >
             <Icon className="w-5 h-5 shrink-0" />
@@ -665,9 +879,31 @@ export default function OrganizationSetupScreen() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'departments' && <DepartmentsTab departments={departments} setDepartments={setDepartments} />}
-      {activeTab === 'categories' && <CategoriesTab categories={categories} setCategories={setCategories} />}
-      {activeTab === 'employees' && <EmployeesTab employees={employees} setEmployees={setEmployees} departments={departments} />}
+      {activeTab === 'departments' && (
+        <DepartmentsTab
+          departments={departments}
+          loading={deptLoading}
+          error={deptError}
+          reload={loadDepartments}
+        />
+      )}
+      {activeTab === 'categories' && (
+        <CategoriesTab
+          categories={categories}
+          loading={catLoading}
+          error={catError}
+          reload={loadCategories}
+        />
+      )}
+      {activeTab === 'employees' && (
+        <EmployeesTab
+          employees={employees}
+          loading={empLoading}
+          error={empError}
+          reload={loadEmployees}
+          departments={departments}
+        />
+      )}
 
     </div>
   );

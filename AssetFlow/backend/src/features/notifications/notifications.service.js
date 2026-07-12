@@ -15,7 +15,12 @@ const activityLogService = require('../../services/activityLog.service');
  * @param {object} query  - { page, limit, unread }
  */
 const getNotifications = async (userId, { page, limit, unread }) => {
-  const offset = (page - 1) * limit;
+  // Defensive parse — validation middleware may not mutate req.query in Express 5
+  // when the key was not originally present in the URL, so we guard here.
+  const safePage  = Math.max(1, parseInt(page,  10) || 1);
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const offset    = (safePage - 1) * safeLimit;
+
   let queryText = `
     SELECT
       id,
@@ -45,19 +50,19 @@ const getNotifications = async (userId, { page, limit, unread }) => {
     pool.query(countQueryText, params),
     pool.query(
       queryText + ` ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-      [...params, limit, offset]
+      [...params, safeLimit, offset]
     ),
   ]);
 
   const total = countResult.rows[0]?.total ?? 0;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = Math.ceil(total / safeLimit);
 
   return {
     notifications: dataResult.rows,
     pagination: {
       total,
-      page,
-      limit,
+      page:  safePage,
+      limit: safeLimit,
       totalPages,
     },
   };
@@ -119,14 +124,10 @@ const markAsRead = async (id, userId) => {
     // 5. Create activity log inside same transaction
     await activityLogService.createLog(client, {
       userId,
-      action: 'notification.read',
+      action:     'notification.read',
       entityType: 'notification',
-      entityId: id,
-      metadata: {
-        notificationId: id,
-        previousState: { is_read: false },
-        newState: { is_read: true },
-      },
+      entityId:   id,
+      metadata:   { notificationId: id, previousState: { is_read: false }, newState: { is_read: true } },
     });
 
     await client.query('COMMIT');
