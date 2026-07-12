@@ -46,10 +46,15 @@ async function create(data) {
  */
 async function findById(id) {
   const { rows } = await query(
-    `SELECT a.*, ac.name AS category_name, d.name AS department_name
+    `SELECT a.*, ac.name AS category_name, d.name AS department_name,
+            al.id AS allocation_id,
+            COALESCE(NULLIF(u.name, ''), u.email, 'Employee #' || al.employee_id) AS employee_name,
+            al.employee_id
      FROM assets a
      LEFT JOIN asset_categories ac ON a.category_id = ac.id
      LEFT JOIN departments d ON a.department_id = d.id
+     LEFT JOIN allocations al ON al.asset_id = a.id AND al.status = 'active'
+     LEFT JOIN users u ON al.employee_id = u.id
      WHERE a.id = $1`,
     [id]
   );
@@ -124,10 +129,15 @@ async function findAll(filters, limit, offset) {
   values.push(offset);
 
   const { rows } = await query(
-    `SELECT a.*, ac.name AS category_name, d.name AS department_name
+    `SELECT a.*, ac.name AS category_name, d.name AS department_name,
+            al.id AS allocation_id,
+            COALESCE(NULLIF(u.name, ''), u.email, 'Employee #' || al.employee_id) AS employee_name,
+            al.employee_id
      FROM assets a
      LEFT JOIN asset_categories ac ON a.category_id = ac.id
      LEFT JOIN departments d ON a.department_id = d.id
+     LEFT JOIN allocations al ON al.asset_id = a.id AND al.status = 'active'
+     LEFT JOIN users u ON al.employee_id = u.id
      ${whereClause}
      ORDER BY a.created_at DESC
      LIMIT $${idx++} OFFSET $${idx++}`,

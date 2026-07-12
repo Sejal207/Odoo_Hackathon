@@ -40,4 +40,11 @@ router.post(
   allocController.returnAllocation
 );
 
+// Direct transfer — admin / asset_manager only (no request/approval needed)
+router.post(
+  '/direct-transfer',
+  authorize(ROLES.ADMIN, ROLES.ASSET_MANAGER),
+  allocController.directTransfer
+);
+
 module.exports = router;

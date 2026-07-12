@@ -169,6 +169,16 @@ async function returnAllocation(allocationId, data, user) {
       metadata: { asset_id: allocation.asset_id, asset_tag: allocation.asset_tag },
     });
 
+    if (allocation.employee_id) {
+      await notify({
+        userId: allocation.employee_id,
+        type: 'asset_returned',
+        message: `Asset ${allocation.asset_tag || ''} has been unallocated/returned from your account`,
+        relatedEntityType: 'allocation',
+        relatedEntityId: allocationId,
+      });
+    }
+
     return returned;
   } catch (error) {
     await client.query('ROLLBACK');
@@ -298,6 +308,16 @@ async function approveTransfer(transferId, user) {
       relatedEntityId: transferId,
     });
 
+    if (transfer.requested_from_employee_id) {
+      await notify({
+        userId: transfer.requested_from_employee_id,
+        type: 'asset_transferred',
+        message: `Transfer of asset ${transfer.asset_tag} from your account has been approved and completed`,
+        relatedEntityType: 'transfer_request',
+        relatedEntityId: transferId,
+      });
+    }
+
     return { transfer: await allocRepo.findTransferById(transferId), newAllocation };
   } catch (error) {
     await client.query('ROLLBACK');
@@ -340,6 +360,93 @@ async function rejectTransfer(transferId, user) {
   return updated;
 }
 
+/**
+ * Direct transfer — admin / asset_manager only.
+ * Atomically returns old allocation and creates a new one for the target employee.
+ * No transfer-request / approval flow needed.
+ */
+async function directTransfer(data, user) {
+  // Only admin or asset_manager may direct-transfer
+  if (user.role !== ROLES.ADMIN && user.role !== ROLES.ASSET_MANAGER) {
+    throw new ForbiddenError('Only admin or asset manager can perform a direct transfer');
+  }
+
+  const asset = await assetsRepo.findByIdRaw(data.asset_id);
+  if (!asset) throw new NotFoundError('Asset not found');
+
+  // Find active allocation for this asset
+  const currentAlloc = await allocRepo.findActiveByAssetId(data.asset_id);
+  if (!currentAlloc) {
+    throw new ConflictError('No active allocation found for this asset. Use "Allocate" instead.');
+  }
+
+  // Can't transfer to the same person
+  if (currentAlloc.employee_id === data.to_employee_id) {
+    throw new ValidationError('Cannot transfer asset to the same employee who currently holds it');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Return old allocation
+    await allocRepo.returnAllocation(currentAlloc.id, {
+      actual_return_date: new Date().toISOString(),
+      return_condition_notes: data.reason || 'Direct transfer by admin/manager',
+    }, client);
+
+    // Create new allocation for target employee
+    const newAllocation = await allocRepo.create({
+      asset_id: data.asset_id,
+      employee_id: data.to_employee_id,
+      department_id: data.department_id || asset.department_id,
+      allocated_by: user.id,
+    }, client);
+
+    await client.query('COMMIT');
+
+    await logActivity({
+      userId: user.id,
+      action: 'asset.direct_transfer',
+      entityType: 'allocation',
+      entityId: newAllocation.id,
+      metadata: {
+        asset_id: data.asset_id,
+        asset_tag: asset.asset_tag,
+        from_employee_id: currentAlloc.employee_id,
+        to_employee_id: data.to_employee_id,
+      },
+    });
+
+    if (currentAlloc.employee_id) {
+      await notify({
+        userId: currentAlloc.employee_id,
+        type: 'asset_transferred',
+        message: `Asset ${asset.asset_tag} has been transferred from your account`,
+        relatedEntityType: 'allocation',
+        relatedEntityId: currentAlloc.id,
+      });
+    }
+
+    if (data.to_employee_id) {
+      await notify({
+        userId: data.to_employee_id,
+        type: 'asset_assigned',
+        message: `Asset ${asset.asset_tag} has been transferred to you`,
+        relatedEntityType: 'allocation',
+        relatedEntityId: newAllocation.id,
+      });
+    }
+
+    return { previousAllocation: currentAlloc, newAllocation };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   isOverdue,
   createAllocation,
@@ -348,4 +455,5 @@ module.exports = {
   createTransferRequest,
   approveTransfer,
   rejectTransfer,
+  directTransfer,
 };

@@ -16,11 +16,11 @@ router.post('/login', validateLogin, authController.login);
 router.post('/register', validateRegister, authController.register);
 router.post('/forgot-password', validateForgotPassword, authController.forgotPassword);
 router.get('/me', authenticate, authController.getMe);
+router.get('/users', authenticate, authController.getUsers);
 
 // --- User Management (Admin Only) ---
 router.use('/users', authenticate, authorize('admin'));
 router.post('/users', validateCreateUser, authController.createUser);
-router.get('/users', authController.getUsers);
 router.get('/users/:id', authController.getUserById);
 router.put('/users/:id', authController.updateUser);
 router.patch('/users/:id/role', validateUpdateRole, authController.updateRole);

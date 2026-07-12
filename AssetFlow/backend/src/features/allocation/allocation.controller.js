@@ -69,6 +69,15 @@ const rejectTransfer = async (req, res, next) => {
   }
 };
 
+const directTransfer = async (req, res, next) => {
+  try {
+    const result = await allocService.directTransfer(req.body, req.user);
+    return successResponse(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createAllocation,
   returnAllocation,
@@ -76,4 +85,5 @@ module.exports = {
   createTransferRequest,
   approveTransfer,
   rejectTransfer,
+  directTransfer,
 };
