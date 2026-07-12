@@ -80,13 +80,16 @@ async function findAll(filters, limit, offset) {
   const values = [];
   let idx = 1;
 
-  if (filters.tag) {
-    conditions.push(`a.asset_tag ILIKE $${idx++}`);
-    values.push(`%${filters.tag}%`);
-  }
-  if (filters.serial) {
-    conditions.push(`a.serial_number ILIKE $${idx++}`);
-    values.push(`%${filters.serial}%`);
+  const searchTerm = filters.tag || filters.serial;
+  if (searchTerm) {
+    conditions.push(`(
+      a.asset_tag ILIKE $${idx}
+      OR a.name ILIKE $${idx}
+      OR COALESCE(a.serial_number, '') ILIKE $${idx}
+      OR COALESCE(a.qr_code, '') ILIKE $${idx}
+    )`);
+    values.push(`%${searchTerm}%`);
+    idx += 1;
   }
   if (filters.category) {
     conditions.push(`a.category_id = $${idx++}`);
@@ -215,6 +218,26 @@ async function getHistory(assetId) {
   };
 }
 
+async function getMetadata() {
+  const [categoriesResult, departmentsResult] = await Promise.all([
+    query(
+      `SELECT id, name
+       FROM asset_categories
+       ORDER BY name ASC`
+    ),
+    query(
+      `SELECT id, name
+       FROM departments
+       ORDER BY name ASC`
+    ),
+  ]);
+
+  return {
+    categories: categoriesResult.rows,
+    departments: departmentsResult.rows,
+  };
+}
+
 module.exports = {
   getNextAssetTag,
   create,
@@ -225,4 +248,5 @@ module.exports = {
   updateById,
   updateStatus,
   getHistory,
+  getMetadata,
 };

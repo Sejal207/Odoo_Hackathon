@@ -36,6 +36,15 @@ const getAssets = async (req, res, next) => {
   }
 };
 
+const getMetadata = async (req, res, next) => {
+  try {
+    const metadata = await assetsService.getMetadata();
+    return successResponse(res, metadata);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getAssetById = async (req, res, next) => {
   try {
     const asset = await assetsService.getAssetById(req.params.id);
@@ -66,6 +75,7 @@ const getAssetHistory = async (req, res, next) => {
 module.exports = {
   createAsset,
   getAssets,
+  getMetadata,
   getAssetById,
   updateAsset,
   getAssetHistory,

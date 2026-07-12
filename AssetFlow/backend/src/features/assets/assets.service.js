@@ -83,10 +83,15 @@ async function getAssetHistory(assetId) {
   return assetsRepo.getHistory(assetId);
 }
 
+async function getMetadata() {
+  return assetsRepo.getMetadata();
+}
+
 module.exports = {
   createAsset,
   getAssetById,
   listAssets,
   updateAsset,
   getAssetHistory,
+  getMetadata,
 };

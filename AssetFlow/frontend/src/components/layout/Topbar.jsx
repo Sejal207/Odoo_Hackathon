@@ -82,9 +82,9 @@ export default function Topbar() {
           )}
         </button>
 
-        <button className="rounded-full p-2 text-[#1D546D] hover:bg-gray-100" title="Theme (coming soon)">
+        {/* <button className="rounded-full p-2 text-[#1D546D] hover:bg-gray-100" title="Theme (coming soon)">
           <Sun className="h-5 w-5" />
-        </button>
+        </button> */}
 
         <div className="relative">
           <button

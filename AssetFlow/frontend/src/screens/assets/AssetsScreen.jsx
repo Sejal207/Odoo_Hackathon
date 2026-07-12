@@ -1,245 +1,533 @@
-import React, { useState, useEffect } from 'react';
-import { Search, ChevronDown, Plus, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, Loader2, Plus, Search, X } from 'lucide-react';
+import { createAsset, getAssetMetadata, getAssets } from '../../features/assets/api/assetsApi';
 
-// Mock data to be replaced with actual API call
-const mockAssets = [
-  { id: '1', tag: 'AF-0012', name: 'Dell Latitude Laptop', category: 'Electronics', status: 'Allocated', location: 'Bengaluru' },
-  { id: '2', tag: 'AF-0062', name: 'Epson Projector', category: 'Electronics', status: 'Maintenance', location: 'HQ Floor 2' },
-  { id: '3', tag: 'AF-0201', name: 'Ergonomic Office Chair', category: 'Furniture', status: 'Available', location: 'Warehouse' },
-  { id: '4', tag: 'AF-0114', name: 'MacBook Pro 14"', category: 'Electronics', status: 'Allocated', location: 'Mumbai' },
-  { id: '5', tag: 'AF-0332', name: 'Standing Desk', category: 'Furniture', status: 'Reserved', location: 'HQ Floor 3' },
-  { id: '6', tag: 'AF-0407', name: 'Conference Speaker', category: 'Electronics', status: 'Available', location: 'HQ Floor 1' },
-  { id: '7', tag: 'AF-0510', name: 'Toyota Fleet Van', category: 'Vehicle', status: 'Allocated', location: 'Depot' },
-  { id: '8', tag: 'AF-0588', name: 'Whiteboard Mobile', category: 'Furniture', status: 'Retired', location: 'Warehouse' },
-  { id: '9', tag: 'AF-0621', name: 'HP LaserJet Printer', category: 'Electronics', status: 'Maintenance', location: 'HQ Floor 2' },
-  { id: '10', tag: 'AF-0703', name: 'Cisco Network Switch', category: 'Electronics', status: 'Available', location: 'Server Room' },
+const STATUS_OPTIONS = [
+  { value: '', label: 'All Statuses' },
+  { value: 'available', label: 'Available' },
+  { value: 'allocated', label: 'Allocated' },
+  { value: 'reserved', label: 'Reserved' },
+  { value: 'under_maintenance', label: 'Maintenance' },
+  { value: 'retired', label: 'Retired' },
+  { value: 'lost', label: 'Lost' },
+  { value: 'disposed', label: 'Disposed' },
 ];
 
-const getStatusBadge = (status) => {
-  switch (status.toLowerCase()) {
-    case 'allocated':
-      return <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">Allocated</span>;
-    case 'maintenance':
-      return <span className="px-3 py-1 bg-orange-100 text-orange-600 rounded-full text-xs font-medium">Maintenance</span>;
-    case 'available':
-      return <span className="px-3 py-1 bg-emerald-100 text-emerald-600 rounded-full text-xs font-medium">Available</span>;
-    case 'reserved':
-      return <span className="px-3 py-1 bg-teal-100 text-teal-600 rounded-full text-xs font-medium">Reserved</span>;
-    case 'retired':
-      return <span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-xs font-medium">Retired</span>;
-    default:
-      return <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">{status}</span>;
-  }
+const STATUS_BADGES = {
+  available: 'bg-emerald-100 text-emerald-700',
+  allocated: 'bg-slate-100 text-slate-600',
+  reserved: 'bg-teal-100 text-teal-700',
+  under_maintenance: 'bg-orange-100 text-orange-700',
+  retired: 'bg-slate-100 text-slate-500',
+  lost: 'bg-rose-100 text-rose-700',
+  disposed: 'bg-slate-200 text-slate-600',
 };
+
+const EMPTY_FORM = {
+  name: '',
+  category_id: '',
+  department_id: '',
+  serial_number: '',
+  location: '',
+  qr_code: '',
+  acquisition_cost: '',
+  is_bookable: false,
+};
+
+const PAGE_SIZE = 10;
+
+function prettyStatus(status) {
+  if (status === 'under_maintenance') return 'Maintenance';
+  return String(status || '').replaceAll('_', ' ');
+}
+
+function AssetStatusBadge({ status }) {
+  const key = String(status || '').toLowerCase();
+  const classes = STATUS_BADGES[key] || 'bg-slate-100 text-slate-600';
+
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize ${classes}`}>
+      {prettyStatus(status)}
+    </span>
+  );
+}
 
 export default function AssetsScreen() {
   const [assets, setAssets] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 0 });
+  const [metadata, setMetadata] = useState({ categories: [], departments: [] });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
   const [openDropdown, setOpenDropdown] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [page, setPage] = useState(1);
+
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   useEffect(() => {
-    // Simulate API fetch
-    const fetchAssets = async () => {
-      setIsLoading(true);
-      try {
-        // Replace with actual API call:
-        // const response = await fetch('/api/assets');
-        // const data = await response.json();
+    let cancelled = false;
 
-        // Using mock data for now
-        setTimeout(() => {
-          setAssets(mockAssets);
-          setIsLoading(false);
-        }, 300);
-      } catch (error) {
-        console.error("Failed to fetch assets:", error);
-        setIsLoading(false);
+    const loadMetadata = async () => {
+      try {
+        const data = await getAssetMetadata();
+        if (!cancelled) {
+          setMetadata({
+            categories: data?.categories || [],
+            departments: data?.departments || [],
+          });
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Unable to load filter data.');
       }
     };
 
-    fetchAssets();
+    loadMetadata();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const filteredAssets = assets.filter(asset =>
-    asset.tag.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    asset.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAssets = async () => {
+      setLoading(true);
+      setError('');
+
+      try {
+        const params = {
+          page,
+          limit: PAGE_SIZE,
+          tag: debouncedSearch || undefined,
+          serial: debouncedSearch || undefined,
+          category: categoryFilter || undefined,
+          status: statusFilter || undefined,
+          department: departmentFilter || undefined,
+        };
+
+        const data = await getAssets(params);
+        if (cancelled) return;
+
+        setAssets(data?.assets || []);
+        setPagination(data?.pagination || { page, limit: PAGE_SIZE, total: 0, totalPages: 0 });
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Could not load assets.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadAssets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, debouncedSearch, categoryFilter, statusFilter, departmentFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, categoryFilter, statusFilter, departmentFilter]);
+
+  const filteredAssets = useMemo(() => {
+    const term = debouncedSearch.trim().toLowerCase();
+
+    if (!term) return assets;
+
+    return assets.filter((asset) => {
+      const assetTag = String(asset.asset_tag || '').toLowerCase();
+      const name = String(asset.name || '').toLowerCase();
+      const serial = String(asset.serial_number || '').toLowerCase();
+      const qrCode = String(asset.qr_code || '').toLowerCase();
+
+      return assetTag.includes(term) || name.includes(term) || serial.includes(term) || qrCode.includes(term);
+    });
+  }, [assets, debouncedSearch]);
+
+  const handleFilterSelect = (type, value) => {
+    if (type === 'category') setCategoryFilter(value);
+    if (type === 'status') setStatusFilter(value);
+    if (type === 'department') setDepartmentFilter(value);
+    setOpenDropdown(null);
+  };
+
+  const handleFormChange = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const resetForm = () => setForm(EMPTY_FORM);
+
+  const handleCreateAsset = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+
+    try {
+      await createAsset({
+        name: form.name.trim(),
+        category_id: form.category_id,
+        department_id: form.department_id || null,
+        serial_number: form.serial_number || null,
+        qr_code: form.qr_code || null,
+        location: form.location || null,
+        acquisition_cost: form.acquisition_cost ? Number(form.acquisition_cost) : null,
+        is_bookable: form.is_bookable,
+      });
+
+      setIsRegisterModalOpen(false);
+      resetForm();
+      setPage(1);
+
+      const data = await getAssets({
+        page: 1,
+        limit: PAGE_SIZE,
+        tag: debouncedSearch || undefined,
+        serial: debouncedSearch || undefined,
+        category: categoryFilter || undefined,
+        status: statusFilter || undefined,
+        department: departmentFilter || undefined,
+      });
+
+      setAssets(data?.assets || []);
+      setPagination(data?.pagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 0 });
+    } catch (err) {
+      setError(err.message || 'Could not create asset.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto flex flex-col h-full bg-[#f8fafc]">
-      {/* Header section */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-1">Assets</h1>
-        <p className="text-sm text-slate-500">Browse, search and manage every registered asset.</p>
+    <div className="space-y-6 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm md:p-8">
+      <div>
+        <h1 className="text-3xl font-bold text-[#061E29]">Assets</h1>
+        <p className="mt-1 text-sm text-slate-500">Browse, search and manage every registered asset.</p>
       </div>
 
-      {/* Action Bar */}
-      <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
         <div className="relative flex-1">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-slate-400" />
-          </div>
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#369588] focus:border-transparent bg-white text-sm"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by tag, serial, or QR code..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
           />
         </div>
+
         <button
           onClick={() => setIsRegisterModalOpen(true)}
-          className="flex items-center justify-center px-4 py-2.5 bg-[#369588] text-white rounded-lg hover:bg-[#2c7a6f] transition-colors font-medium text-sm"
+          className="inline-flex items-center justify-center rounded-lg bg-[#369588] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#2f8176]"
         >
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="mr-2 h-4 w-4" />
           Register Asset
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 mb-6">
-        <div className="relative">
-          <button
-            onClick={() => setOpenDropdown(openDropdown === 'Category' ? null : 'Category')}
-            className="flex items-center px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            Category
-            <ChevronDown className="ml-2 h-4 w-4" />
-          </button>
-          {openDropdown === 'Category' && (
-            <div className="absolute top-full mt-1 left-0 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-10">
-              {['Electronics', 'Furniture', 'Vehicle', 'Shared Spaces'].map(cat => (
-                <button key={cat} className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                  {cat}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="flex flex-wrap gap-3">
+        <FilterDropdown
+          label={statusFilter ? prettyStatus(statusFilter) : 'Status'}
+          open={openDropdown === 'status'}
+          onToggle={() => setOpenDropdown((current) => (current === 'status' ? null : 'status'))}
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <DropdownItem key={option.value || 'all'} onClick={() => handleFilterSelect('status', option.value)}>
+              {option.label}
+            </DropdownItem>
+          ))}
+        </FilterDropdown>
 
-        <div className="relative">
-          <button
-            onClick={() => setOpenDropdown(openDropdown === 'Status' ? null : 'Status')}
-            className="flex items-center px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            Status
-            <ChevronDown className="ml-2 h-4 w-4" />
-          </button>
-          {openDropdown === 'Status' && (
-            <div className="absolute top-full mt-1 left-0 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-10">
-              {['Allocated', 'Available', 'Maintenance', 'Reserved', 'Retired'].map(status => (
-                <button key={status} className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                  {status}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <FilterDropdown
+          label={categoryFilter ? getLabelById(metadata.categories, categoryFilter) : 'Category'}
+          open={openDropdown === 'category'}
+          onToggle={() => setOpenDropdown((current) => (current === 'category' ? null : 'category'))}
+        >
+          <DropdownItem onClick={() => handleFilterSelect('category', '')}>All Categories</DropdownItem>
+          {metadata.categories.map((category) => (
+            <DropdownItem key={category.id} onClick={() => handleFilterSelect('category', category.id)}>
+              {category.name}
+            </DropdownItem>
+          ))}
+        </FilterDropdown>
 
-        <div className="relative">
-          <button
-            onClick={() => setOpenDropdown(openDropdown === 'Department' ? null : 'Department')}
-            className="flex items-center px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            Department
-            <ChevronDown className="ml-2 h-4 w-4" />
-          </button>
-          {openDropdown === 'Department' && (
-            <div className="absolute top-full mt-1 left-0 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-10">
-              {['Engineering', 'HR', 'Operations', 'Finance'].map(dept => (
-                <button key={dept} className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                  {dept}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <FilterDropdown
+          label={departmentFilter ? getLabelById(metadata.departments, departmentFilter) : 'Department'}
+          open={openDropdown === 'department'}
+          onToggle={() => setOpenDropdown((current) => (current === 'department' ? null : 'department'))}
+        >
+          <DropdownItem onClick={() => handleFilterSelect('department', '')}>All Departments</DropdownItem>
+          {metadata.departments.map((department) => (
+            <DropdownItem key={department.id} onClick={() => handleFilterSelect('department', department.id)}>
+              {department.name}
+            </DropdownItem>
+          ))}
+        </FilterDropdown>
       </div>
 
-      {/* Table */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex-1 shadow-sm">
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="text-xs uppercase text-slate-500 bg-slate-50 border-b border-slate-200">
+          <table className="min-w-full divide-y divide-slate-100 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-6 py-4 font-semibold">TAG</th>
-                <th className="px-6 py-4 font-semibold">NAME</th>
-                <th className="px-6 py-4 font-semibold">CATEGORY</th>
-                <th className="px-6 py-4 font-semibold">STATUS</th>
-                <th className="px-6 py-4 font-semibold">LOCATION</th>
+                <th className="px-6 py-4 font-semibold">Tag</th>
+                <th className="px-6 py-4 font-semibold">Name</th>
+                <th className="px-6 py-4 font-semibold">Category</th>
+                <th className="px-6 py-4 font-semibold">Status</th>
+                <th className="px-6 py-4 font-semibold">Location</th>
               </tr>
             </thead>
-            <tbody>
-              {isLoading ? (
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan="5" className="px-6 py-10 text-center text-slate-500">
+                    <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-[#1D546D]" />
                     Loading assets...
                   </td>
                 </tr>
               ) : filteredAssets.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan="5" className="px-6 py-10 text-center text-slate-500">
                     No assets found.
                   </td>
                 </tr>
               ) : (
                 filteredAssets.map((asset) => (
-                  <tr key={asset.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 font-medium text-slate-800">{asset.tag}</td>
+                  <tr key={asset.id} className="transition hover:bg-slate-50/80">
+                    <td className="px-6 py-4 font-medium text-slate-900">{asset.asset_tag}</td>
                     <td className="px-6 py-4 text-slate-700">{asset.name}</td>
-                    <td className="px-6 py-4">{asset.category}</td>
-                    <td className="px-6 py-4">{getStatusBadge(asset.status)}</td>
-                    <td className="px-6 py-4">{asset.location}</td>
+                    <td className="px-6 py-4 text-slate-600">{asset.category_name || 'Uncategorized'}</td>
+                    <td className="px-6 py-4">
+                      <AssetStatusBadge status={asset.status} />
+                    </td>
+                    <td className="px-6 py-4 text-slate-600">{asset.location || '-'}</td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+
+        <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4 text-sm text-slate-500">
+          <span>
+            Showing {filteredAssets.length} of {pagination.total || 0} assets
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page <= 1}
+              className="rounded-xl border border-slate-200 px-3 py-2 font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="min-w-20 text-center font-medium text-slate-700">
+              {pagination.page || page} / {pagination.totalPages || 1}
+            </span>
+            <button
+              onClick={() => setPage((current) => current + 1)}
+              disabled={page >= (pagination.totalPages || 1)}
+              className="rounded-xl border border-slate-200 px-3 py-2 font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Register Asset Modal */}
       {isRegisterModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-slate-900">Register New Asset</h2>
-              <button onClick={() => setIsRegisterModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-[#061E29]">Register New Asset</h2>
+                <p className="text-sm text-slate-500">Create a new asset record in the backend.</p>
+              </div>
+              <button onClick={() => setIsRegisterModalOpen(false)} className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Asset Name</label>
-                <input type="text" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#369588]" placeholder="e.g. MacBook Pro" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-                <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#369588]">
-                  <option>Electronics</option>
-                  <option>Furniture</option>
-                  <option>Vehicle</option>
-                  <option>Shared Spaces</option>
+
+            <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleCreateAsset}>
+              <Field label="Asset Name" required>
+                <input
+                  value={form.name}
+                  onChange={(event) => handleFormChange('name', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
+                  placeholder="e.g. MacBook Pro"
+                  required
+                />
+              </Field>
+
+              <Field label="Category" required>
+                <select
+                  value={form.category_id}
+                  onChange={(event) => handleFormChange('category_id', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
+                  required
+                >
+                  <option value="">Select category</option>
+                  {metadata.categories.map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
                 </select>
+              </Field>
+
+              <Field label="Department">
+                <select
+                  value={form.department_id}
+                  onChange={(event) => handleFormChange('department_id', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
+                >
+                  <option value="">No department</option>
+                  {metadata.departments.map((department) => (
+                    <option key={department.id} value={department.id}>{department.name}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Serial Number">
+                <input
+                  value={form.serial_number}
+                  onChange={(event) => handleFormChange('serial_number', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
+                  placeholder="Serial number"
+                />
+              </Field>
+
+              <Field label="QR Code">
+                <input
+                  value={form.qr_code}
+                  onChange={(event) => handleFormChange('qr_code', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
+                  placeholder="QR code"
+                />
+              </Field>
+
+              <Field label="Location">
+                <input
+                  value={form.location}
+                  onChange={(event) => handleFormChange('location', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
+                  placeholder="e.g. HQ Floor 2"
+                />
+              </Field>
+
+              <Field label="Acquisition Cost">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.acquisition_cost}
+                  onChange={(event) => handleFormChange('acquisition_cost', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-[#1D546D] focus:ring-2 focus:ring-[#1D546D]/10"
+                  placeholder="Optional"
+                />
+              </Field>
+
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.is_bookable}
+                  onChange={(event) => handleFormChange('is_bookable', event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-[#1D546D] focus:ring-[#1D546D]"
+                />
+                This asset can be booked by users
+              </label>
+
+              <div className="flex justify-end gap-3 sm:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRegisterModalOpen(false)}
+                  className="rounded-2xl border border-slate-200 px-5 py-3 font-medium text-slate-600 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center rounded-2xl bg-[#369588] px-5 py-3 font-semibold text-white transition hover:bg-[#2f8176] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Save Asset
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
-                <input type="text" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#369588]" placeholder="e.g. HQ Floor 2" />
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setIsRegisterModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 transition-colors">
-                Cancel
-              </button>
-              <button onClick={() => setIsRegisterModalOpen(false)} className="px-4 py-2 text-sm font-medium text-white bg-[#369588] hover:bg-[#2c7a6f] rounded-lg transition-colors">
-                Save Asset
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function useDebouncedValue(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+function getLabelById(items, id) {
+  return items.find((item) => item.id === id)?.name || 'Unknown';
+}
+
+function FilterDropdown({ label, open, onToggle, children }) {
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
+      >
+        {label}
+        <ChevronDown className="ml-2 h-4 w-4" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DropdownItem({ children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, required = false, children }) {
+  return (
+    <label className="space-y-2 text-sm font-medium text-slate-700 sm:col-span-1">
+      <span>
+        {label}
+        {required ? <span className="ml-1 text-rose-500">*</span> : null}
+      </span>
+      {children}
+    </label>
   );
 }

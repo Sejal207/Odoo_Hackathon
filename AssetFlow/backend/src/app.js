@@ -49,11 +49,13 @@ const authRoutes  = require('./features/auth/auth.routes');
 const dashboardRoutes = require('./features/dashboard/dashboard.routes');
 const activityLogRoutes = require('./features/activityLogs/activityLogs.routes');
 const notificationRoutes = require('./features/notifications/notifications.routes');
+const assetsRoutes = require('./features/assets/assets.routes');
 
 app.use('/api/auth',   authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/assets', assetsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, message: 'AssetFlow API is running' });

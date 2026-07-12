@@ -23,6 +23,9 @@ router.use(authenticate);
 // List assets — all authenticated users
 router.get('/', assetsController.getAssets);
 
+// Metadata for asset filters and register form
+router.get('/meta', assetsController.getMetadata);
+
 // Create asset — Asset Manager only
 router.post(
   '/',
