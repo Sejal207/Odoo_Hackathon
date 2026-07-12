@@ -6,6 +6,7 @@ import AppLayout from './components/layout/AppLayout';
 import LoginScreen from './screens/auth/LoginScreen';
 import RegisterScreen from './screens/auth/RegisterScreen';
 import DashboardScreen from './screens/dashboard/DashboardScreen';
+import AssetsScreen from './screens/assets/AssetsScreen';
 
 function ComingSoon({ label }) {
   return <div className="p-8 text-[#061E29]">{label} screen coming soon</div>;
@@ -25,7 +26,7 @@ export default function App() {
             <Route element={<AppLayout />}>
               <Route path="/dashboard" element={<DashboardScreen />} />
               <Route path="/organization-setup" element={<ComingSoon label="Organization Setup" />} />
-              <Route path="/assets" element={<ComingSoon label="Assets" />} />
+              <Route path="/assets" element={<AssetsScreen />} />
               <Route path="/allocations" element={<ComingSoon label="Allocation & Transfer" />} />
               <Route path="/bookings" element={<ComingSoon label="Resource Booking" />} />
               <Route path="/maintenance" element={<ComingSoon label="Maintenance" />} />
